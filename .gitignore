@@ -127,3 +127,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+.env 
+
+tax_payments/migrations/0*.py
+tax_payments/migrations/__pycache__/0*.pyc

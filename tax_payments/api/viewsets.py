@@ -1,4 +1,5 @@
 import json
+import random
 
 from django.core.serializers import json as json_serializar
 
@@ -9,6 +10,7 @@ from rest_framework import status
 
 from tax_payments.api.serializers import TaxSerializer, TaxPaymentSerializer
 from tax_payments.models import Tax, TaxPayment
+
 # from prisma.apps.base.api.permissions import ValidatePermissionAll
 # from prisma.apps.base.models import StatusCodeInfo
 # from prisma.apps.base.api.paginations import SmallResultSetPagination
@@ -60,6 +62,22 @@ def list() -> enlista objetos
 #     ordering_fields = ("name",)
 
 
+def random_code(size=5):
+    """
+    Función para generar un codigo aleatorio, recibe como parametro el tamaño deseado.
+
+    """
+    letters = ["a", "b", "c", "d", "e", "h", "k", "m", "n", "s", "t", "u"]
+    numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    values = letters + numbers
+    code = ""
+
+    for i in range(size):
+        code += str(random.choice(values))
+
+    return code
+
+
 class TaxViewSet(viewsets.ViewSet):
     """
     Administrar las boletas (impuestos) de servicios
@@ -75,7 +93,7 @@ class TaxViewSet(viewsets.ViewSet):
         taxs = Tax.objects.all()
         _json = json_serializar.Serializer()
         taxs = json.loads(_json.serialize(taxs))
-        return Response({"status_code": status.HTTP_200_OK, "taxs": taxs })
+        return Response({"status_code": status.HTTP_200_OK, "taxs": taxs})
 
     def create(self, request):
         """
@@ -87,13 +105,16 @@ class TaxViewSet(viewsets.ViewSet):
         if serializer.is_valid():
 
             validated_data = serializer.validated_data
+            validated_data["barcode"] = f"tax_{random_code(size=8)}"
             Tax.objects.create(**validated_data)
-            return Response({"status_code": status.HTTP_201_CREATED, "new_tax":  serializer.validated_data})
-        else:
             return Response(
-                serializer.errors,
-                status=status.HTTP_400_BAD_REQUEST
+                {
+                    "status_code": status.HTTP_201_CREATED,
+                    "new_tax": serializer.validated_data,
+                }
             )
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def retrieve(self, request, pk=None):
         """
@@ -135,7 +156,9 @@ class TaxPaymentViewSet(viewsets.ViewSet):
         taxs_pays = TaxPayment.objects.all()
         _json = json_serializar.Serializer()
         list_taxs_pays = json.loads(_json.serialize(taxs_pays))
-        return Response({"status_code": status.HTTP_200_OK, "tax_payments": list_taxs_pays })
+        return Response(
+            {"status_code": status.HTTP_200_OK, "tax_payments": list_taxs_pays}
+        )
 
     def create(self, request):
         """
@@ -149,12 +172,11 @@ class TaxPaymentViewSet(viewsets.ViewSet):
             tax_payment = TaxPayment.objects.create(**validated_data)
             tax_payment.payable.payment_status = "paid"
             tax_payment.payable.save()
-            return Response({"status_code": status.HTTP_201_CREATED, "tax_id": tax_payment.id })
-        else:
             return Response(
-                serializer.errors,
-                status=status.HTTP_400_BAD_REQUEST
+                {"status_code": status.HTTP_201_CREATED, "tax_id": tax_payment.id}
             )
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def retrieve(self, request, pk=None):
         """
