@@ -28,3 +28,48 @@ class TaxPaymentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Debe colocar el número de tarjeta")
 
         return data
+
+
+class FilterByDateTaxPaymentSerializer(serializers.Serializer):
+
+    date = serializers.DateField()
+    total_amount = serializers.FloatField()
+    count = serializers.IntegerField()
+
+
+class FilterByServiceTaxSerializer(serializers.ModelSerializer):
+
+    expiration_date = serializers.SerializerMethodField()
+    barcode = serializers.SerializerMethodField()
+
+    class Meta:
+
+        model = TaxPayment
+        fields = ("expiration_date", "amount", "barcode")
+
+    def get_expiration_date(self, obj):
+        return obj.payable.expiration_date
+
+    def get_barcode(self, obj):
+        return obj.payable.barcode
+
+
+class FilterByPaymentStatusTaxSerializer(serializers.ModelSerializer):
+
+    service_type = serializers.SerializerMethodField()
+    expiration_date = serializers.SerializerMethodField()
+    barcode = serializers.SerializerMethodField()
+
+    class Meta:
+
+        model = TaxPayment
+        fields = ("service_type", "expiration_date", "amount", "barcode")
+
+    def get_service_type(self, obj):
+        return obj.payable.service_type
+
+    def get_expiration_date(self, obj):
+        return obj.payable.expiration_date
+
+    def get_barcode(self, obj):
+        return obj.payable.barcode

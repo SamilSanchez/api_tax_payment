@@ -1,65 +1,19 @@
-import json
 import random
 
-from django.core.serializers import json as json_serializar
-
-from rest_framework import viewsets, filters as df
-from rest_framework.permissions import IsAuthenticated, DjangoModelPermissions
+from django.db.models import Sum, Count
+from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from tax_payments.api.serializers import TaxSerializer, TaxPaymentSerializer
+from tax_payments.api.serializers import (
+    FilterByDateTaxPaymentSerializer,
+    FilterByPaymentStatusTaxSerializer,
+    FilterByServiceTaxSerializer,
+    TaxSerializer,
+    TaxPaymentSerializer,
+)
 from tax_payments.models import Tax, TaxPayment
-
-# from prisma.apps.base.api.permissions import ValidatePermissionAll
-# from prisma.apps.base.models import StatusCodeInfo
-# from prisma.apps.base.api.paginations import SmallResultSetPagination
-# from prisma.apps.base.api.serializers import ProvinceSerializer, StatusCodeModelSerializer
-
-
-"""
-Viewsets: 
-
-- Se encarga de la logica comun (crear, actualizar, leer, eliminar)
-- Bueno para operaciones estandar de la bases de datos
-- Forma mas rapida de hacer interfaz con base de datos
-
-Cuando usamos viewsets ?
-
-- CRUD simple
-- API Simple
-- Poca personalizacion de logica
-- Trabaja con estructuras de datos normales
-
-Usan funciones de operadores de modelos:
-def list() -> enlista objetos
-    create() -> crea objeto
-    retrieve() -> obtiene objeto especifico
-    update() -> actualiza objeto
-    partial_update() -> actualiza parcialmente un objeto
-    destroy() -> Elimina objeto
-"""
-
-# Algunas Vista Genericas para realizar dos o mas metodos metodos http con la misma url
-# from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView, RetrieveUpdateAPIView
-
-# Al heredar de “ModelViewSet” el API que expondremos será CRUD
-# class StatusCodeModelViewSet(viewsets.ModelViewSet):
-#     """
-#     CRUD para los estados de respuesta http.
-#     """
-
-#     model = StatusCodeInfo
-#     queryset = StatusCodeInfo.objects.all()
-#     serializer_class = StatusCodeModelSerializer
-#     permission_classes = (IsAuthenticated, ValidatePermissionAll)
-#     pagination_class = SmallResultSetPagination
-#     filter_backends = (
-#         df.OrderingFilter,
-#         df.SearchFilter,
-#     )
-#     search_fields = ("name",)
-#     ordering_fields = ("name",)
 
 
 def random_code(size=5):
@@ -85,15 +39,36 @@ class TaxViewSet(viewsets.ViewSet):
 
     serializer_class = TaxSerializer
     pagination_classes = (IsAuthenticated,)
+    queryset = Tax.objects.all()
 
     def list(self, request):
         """
         Muestra la lista de boletas (impuestos) de servicio
         """
-        taxs = Tax.objects.all()
-        _json = json_serializar.Serializer()
-        taxs = json.loads(_json.serialize(taxs))
-        return Response({"status_code": status.HTTP_200_OK, "taxs": taxs})
+        params = request.query_params
+        service_type = params.get("service_type")
+        payment_status = params.get("payment_status")
+
+        if service_type:
+            queryset = TaxPayment.objects.filter(
+                payable__service_type=service_type
+            ).all()
+            serializer = FilterByServiceTaxSerializer(queryset, many=True)
+            return Response(
+                {"status_code": status.HTTP_200_OK, "taxs": serializer.data}
+            )
+
+        elif payment_status:
+            queryset = TaxPayment.objects.filter(
+                payable__payment_status=payment_status
+            ).all()
+            serializer = FilterByPaymentStatusTaxSerializer(queryset, many=True)
+            return Response(
+                {"status_code": status.HTTP_200_OK, "taxs": serializer.data}
+            )
+
+        serializer = self.serializer_class(self.queryset, many=True)
+        return Response({"status_code": status.HTTP_200_OK, "taxs": serializer.data})
 
     def create(self, request):
         """
@@ -116,31 +91,7 @@ class TaxViewSet(viewsets.ViewSet):
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def retrieve(self, request, pk=None):
-        """
-        Obtener solo una boleta (impuesto) de servicio
-        """
-        return Response({"http_method": "GET"})
-
-    def update(self, request, pk=None):
-        """
-        Actualizar los datos de una boleta (impuesto) de servicio
-        """
-        return Response({"http_method": "PUT"})
-
-    def partital_update(self, request, pk=None):
-        """
-        Actualizar los datos parcialmente de una de boleta (impuesto)  de servicio
-        """
-        return Response({"http_method": "PATCH"})
-
-    def destroy(self, request, pk=None):
-        """
-        Eliminar de boleta (impuesto) de servicio
-        """
-        return Response({"http_method": "DELETE"})
-
-
+ 
 class TaxPaymentViewSet(viewsets.ViewSet):
     """
     Administrar loas pagos de la boletas (impuestos) de servicios
@@ -148,16 +99,54 @@ class TaxPaymentViewSet(viewsets.ViewSet):
 
     serializer_class = TaxPaymentSerializer
     pagination_classes = (IsAuthenticated,)
+    queryset = TaxPayment.objects.all()
 
     def list(self, request):
         """
         Muestra la lista de pagos de boleta (impuesto)
         """
-        taxs_pays = TaxPayment.objects.all()
-        _json = json_serializar.Serializer()
-        list_taxs_pays = json.loads(_json.serialize(taxs_pays))
+        params = request.query_params
+        date_initial = params.get("date_initial")
+        date_end = params.get("date_end")
+
+        if date_initial and date_end:
+            import datetime as dt
+
+            year1 = int(date_initial.split("/")[2])
+            month1 = int(date_initial.split("/")[1])
+            day1 = int(date_initial.split("/")[0])
+
+            year2 = int(date_end.split("/")[2])
+            month2 = int(date_end.split("/")[1])
+            day2 = int(date_end.split("/")[0])
+
+            start = dt.date(
+                year1,
+                month1,
+                day1,
+            )
+            end = dt.date(
+                year2,
+                month2,
+                day2,
+            )
+
+            result = (
+                TaxPayment.objects.filter(date__range=[start, end])
+                .values("date")
+                .annotate(total_amount=Sum("amount"))
+                .annotate(count=Count("*"))
+                .order_by("date")
+            )
+
+            serializer = FilterByDateTaxPaymentSerializer(result, many=True)
+            return Response(
+                {"status_code": status.HTTP_200_OK, "tax_payments": serializer.data}
+            )
+
+        serializer = self.serializer_class(self.queryset, many=True)
         return Response(
-            {"status_code": status.HTTP_200_OK, "tax_payments": list_taxs_pays}
+            {"status_code": status.HTTP_200_OK, "tax_payments": serializer.data}
         )
 
     def create(self, request):
@@ -177,27 +166,3 @@ class TaxPaymentViewSet(viewsets.ViewSet):
             )
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def retrieve(self, request, pk=None):
-        """
-        Obtener un pago de boleta (impuesto)
-        """
-        return Response({"http_method": "GET"})
-
-    def update(self, request, pk=None):
-        """
-        Actualizar un pago de boleta (impuesto)
-        """
-        return Response({"http_method": "PUT"})
-
-    def partital_update(self, request, pk=None):
-        """
-        Actualizar los datos parcialmente de un pago de boleta (impuesto)
-        """
-        return Response({"http_method": "PATCH"})
-
-    def destroy(self, request, pk=None):
-        """
-        Eliminar una de boleta (impuesto)
-        """
-        return Response({"http_method": "DELETE"})

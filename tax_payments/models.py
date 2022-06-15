@@ -1,5 +1,4 @@
 from datetime import datetime
-from pyexpat import model
 from django.db import models
 from django.core.exceptions import ValidationError
 
